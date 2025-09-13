@@ -4,6 +4,7 @@ const socketIo = require('socket.io');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const os = require('os');
 
 const app = express();
 const server = http.createServer(app);
@@ -467,3 +468,16 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`P2P WebChat server running on http://0.0.0.0:${PORT}`);
   console.log(`Access from other devices on your network using your local IP address`);
 });
+function getLocalIp() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+console.log(`Local network IP: http://${getLocalIp()}:${PORT}`);
