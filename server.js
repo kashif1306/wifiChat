@@ -19,7 +19,7 @@ const users = new Map(); // userId -> { id, name, socketId, joinedAt }
 const rooms = new Map(); // roomId -> { id, name, isPrivate, pinHash, leadUserId, members: Set }
 const socketToUser = new Map(); // socketId -> userId
 
-// Serve static files
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
