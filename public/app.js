@@ -9,6 +9,7 @@ class P2PWebChat {
         this.dataChannels = new Map();
         this.fileTransfers = new Map();
         this.currentChat = null;
+        this.notificationSoundEnabled = true;
         
         // WebRTC Configuration
         this.rtcConfig = {
@@ -63,6 +64,7 @@ class P2PWebChat {
         this.initializeIndexedDB();
         this.checkSession();
         this.setupEventListeners();
+        this.requestNotificationPermission();
     }
 
     onReact(messageId, emoji) {
@@ -252,11 +254,22 @@ class P2PWebChat {
 
         // Room message handling
         this.socket.on('room:message', (data) => {
+            // Always save the message, regardless of chat panel state
+            this.saveChatMessage(data.roomId, data.message);
+            
             if (this.currentChat && this.currentChat.type === 'room' && this.currentChat.id === data.roomId) {
+                // Display message if chat is currently open
                 this.displayMessage(data.message, false);
-                this.saveChatMessage(data.roomId, data.message);
-                this.maybeNotify(`New message in ${this.rooms.get(data.roomId)?.name || 'room'}`, data.message.text);
+            } else {
+                // Handle background message
+                this.handleBackgroundMessage('room', data.roomId, data.message);
             }
+            
+            // Always show notification
+            const roomName = this.rooms.get(data.roomId)?.name || 'room';
+            this.showNotificationAlert(`New message in ${roomName}`, data.message.text, () => {
+                this.startRoomChat(data.roomId);
+            });
         });
 
         this.socket.on('room:message-edit', (data) => {
@@ -491,7 +504,9 @@ class P2PWebChat {
         const container = document.getElementById('peersList');
         container.innerHTML = '';
 
-        users.filter(user => user.id !== this.currentUser.userId).forEach(user => {
+        const filteredUsers = users.filter(user => user.id !== this.currentUser.userId);
+        
+        filteredUsers.forEach(user => {
             const tile = this.createPeerTile(user);
             container.appendChild(tile);
         });
@@ -500,6 +515,10 @@ class P2PWebChat {
         users.forEach(user => {
             this.peers.set(user.id, user);
         });
+        
+        // Update lobby stats and connections
+        this.updateLobbyStats();
+        this.updateActiveConnections(filteredUsers);
     }
 
     updateRoomsList(rooms) {
@@ -522,6 +541,10 @@ class P2PWebChat {
         rooms.forEach(room => {
             this.rooms.set(room.id, room);
         });
+        
+        // Update lobby with joined rooms
+        this.updateMyRooms();
+        this.updateLobbyStats();
     }
 
     createPeerTile(user) {
@@ -572,6 +595,370 @@ class P2PWebChat {
         });
     }
 
+    // New methods for lobby updates
+    updateLobbyStats() {
+        const joinedRooms = Array.from(this.rooms.values()).filter(room => 
+            room.members.some(m => m.id === this.currentUser.userId)
+        );
+        const connectedPeers = Array.from(this.peers.values()).filter(user => 
+            user.id !== this.currentUser.userId
+        );
+        
+        // Update stat cards
+        document.getElementById('roomCount').textContent = joinedRooms.length;
+        document.getElementById('peerCount').textContent = connectedPeers.length;
+        
+        // Update section badges
+        document.getElementById('myRoomsBadge').textContent = joinedRooms.length;
+        document.getElementById('connectionsBadge').textContent = connectedPeers.length;
+        
+        // Get message count from localStorage
+        const messageCount = this.getTodayMessageCount();
+        document.getElementById('messageCount').textContent = messageCount;
+    }
+
+    updateMyRooms() {
+        const container = document.getElementById('myRooms');
+        const emptyState = document.getElementById('emptyRooms');
+        
+        const joinedRooms = Array.from(this.rooms.values()).filter(room => 
+            room.members.some(m => m.id === this.currentUser.userId)
+        );
+        
+        if (joinedRooms.length === 0) {
+            emptyState.style.display = 'block';
+            // Clear any existing room tiles
+            const existingTiles = container.querySelectorAll('.room-tile');
+            existingTiles.forEach(tile => tile.remove());
+        } else {
+            emptyState.style.display = 'none';
+            
+            // Clear existing tiles
+            const existingTiles = container.querySelectorAll('.room-tile');
+            existingTiles.forEach(tile => tile.remove());
+            
+            // Add joined rooms
+            joinedRooms.forEach(room => {
+                const tile = this.createLobbyRoomTile(room);
+                container.appendChild(tile);
+            });
+        }
+    }
+
+    updateActiveConnections(users) {
+        const container = document.getElementById('activeConnections');
+        const emptyState = document.getElementById('emptyConnections');
+        
+        if (users.length === 0) {
+            emptyState.style.display = 'block';
+            // Clear any existing connection items
+            const existingItems = container.querySelectorAll('.connection-item');
+            existingItems.forEach(item => item.remove());
+        } else {
+            emptyState.style.display = 'none';
+            
+            // Clear existing items
+            const existingItems = container.querySelectorAll('.connection-item');
+            existingItems.forEach(item => item.remove());
+            
+            // Add active connections
+            users.forEach(user => {
+                const item = this.createConnectionItem(user);
+                container.appendChild(item);
+            });
+        }
+    }
+
+    createLobbyRoomTile(room) {
+        const tile = document.createElement('div');
+        tile.className = 'room-tile enhanced-tile';
+        tile.setAttribute('data-room-id', room.id);
+        
+        const isLead = room.leadUserId === this.currentUser.userId;
+        const lastActivity = this.getLastRoomActivity(room.id);
+        
+        tile.innerHTML = `
+            <div class="tile-header">
+                <div class="tile-icon">${room.isPrivate ? '🔒' : '🌐'}</div>
+                <div class="tile-content">
+                    <div class="tile-title">${this.escapeHtml(room.name)}</div>
+                    <div class="tile-subtitle">${room.members.length} members ${isLead ? '• Leader' : ''}</div>
+                </div>
+                <div class="tile-status ${room.isPrivate ? 'private' : 'public'}">${room.isPrivate ? 'Private' : 'Public'}</div>
+            </div>
+            <div class="tile-footer">
+                <div class="tile-activity">${lastActivity}</div>
+                <div class="tile-actions">
+                    <button class="tile-btn primary" onclick="app.startRoomChat('${room.id}')">💬 Chat</button>
+                    <button class="tile-btn secondary" onclick="app.leaveRoom('${room.id}')">🚪 Leave</button>
+                </div>
+            </div>
+        `;
+        return tile;
+    }
+
+    createConnectionItem(user) {
+        const item = document.createElement('div');
+        item.className = 'connection-item';
+        item.setAttribute('data-peer-id', user.id);
+        
+        const connectionStatus = this.peerConnections.has(user.id) ? 'connected' : 'available';
+        const lastSeen = this.formatLastSeen(user.joinedAt);
+        
+        item.innerHTML = `
+            <div class="connection-avatar" style="background-image: url('${user.avatarUrl || ''}')">
+                ${!user.avatarUrl ? user.name.charAt(0).toUpperCase() : ''}
+            </div>
+            <div class="connection-info">
+                <div class="connection-name">${this.escapeHtml(user.name)}</div>
+                <div class="connection-status-text">
+                    <span class="status-dot ${connectionStatus}"></span>
+                    ${connectionStatus === 'connected' ? 'Connected' : 'Available'} • ${lastSeen}
+                </div>
+            </div>
+            <div class="connection-actions">
+                <button class="connection-btn" onclick="app.startChat('${user.id}')" title="Start Chat">💬</button>
+                <button class="connection-btn" onclick="app.initWebRTCConnection('${user.id}')" title="Connect">🔗</button>
+            </div>
+        `;
+        return item;
+    }
+
+    addRecentActivity(type, description, roomId = null) {
+        const container = document.getElementById('recentActivity');
+        const emptyState = container.querySelector('.empty-state');
+        
+        if (emptyState) {
+            emptyState.style.display = 'none';
+        }
+        
+        const activity = document.createElement('div');
+        activity.className = 'activity-item';
+        
+        const icons = {
+            'message': '💬',
+            'join': '👋',
+            'leave': '👋',
+            'room_create': '🏠',
+            'file': '📎',
+            'connect': '🔗'
+        };
+        
+        activity.innerHTML = `
+            <div class="activity-icon">${icons[type] || '📝'}</div>
+            <div class="activity-content">
+                <div class="activity-title">${this.escapeHtml(description)}</div>
+                <div class="activity-time">${this.formatTime(new Date())}</div>
+            </div>
+        `;
+        
+        container.insertBefore(activity, container.firstChild);
+        
+        // Keep only last 10 activities
+        const activities = container.querySelectorAll('.activity-item');
+        if (activities.length > 10) {
+            activities[activities.length - 1].remove();
+        }
+    }
+
+    getLastRoomActivity(roomId) {
+        // This would typically come from stored chat history
+        return 'Active now';
+    }
+
+    getTodayMessageCount() {
+        // Get from localStorage or return 0
+        const today = new Date().toDateString();
+        const stored = localStorage.getItem(`messageCount_${today}`);
+        return stored ? parseInt(stored) : 0;
+    }
+
+    incrementMessageCount() {
+        const today = new Date().toDateString();
+        const current = this.getTodayMessageCount();
+        localStorage.setItem(`messageCount_${today}`, (current + 1).toString());
+        document.getElementById('messageCount').textContent = current + 1;
+    }
+
+    formatLastSeen(joinedAt) {
+        const now = new Date();
+        const joined = new Date(joinedAt);
+        const diff = now - joined;
+        
+        if (diff < 60000) return 'Just now';
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+        return `${Math.floor(diff / 86400000)}d ago`;
+    }
+
+    formatTime(date) {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // Background message handling
+    handleBackgroundMessage(type, chatId, message) {
+        // Store unread message count
+        const key = `unread_${type}_${chatId}`;
+        const currentCount = parseInt(localStorage.getItem(key) || '0');
+        localStorage.setItem(key, (currentCount + 1).toString());
+        
+        // Update UI indicators
+        this.updateUnreadIndicators();
+        
+        // Add to recent activity
+        const description = type === 'room' 
+            ? `New message in ${this.rooms.get(chatId)?.name || 'room'}`
+            : `Message from ${this.peers.get(chatId)?.name || 'peer'}`;
+        this.addRecentActivity('message', description, chatId);
+        
+        // Play notification sound if enabled
+        this.playNotificationSound();
+    }
+
+    // Enhanced notification system
+    showNotificationAlert(title, message, onClick = null) {
+        // Browser notification if permission granted
+        if (Notification.permission === 'granted') {
+            const notification = new Notification(title, {
+                body: message.substring(0, 100),
+                icon: '/favicon.ico',
+                tag: 'wifichat-message'
+            });
+            
+            if (onClick) {
+                notification.onclick = () => {
+                    window.focus();
+                    onClick();
+                    notification.close();
+                };
+            }
+            
+            // Auto close after 5 seconds
+            setTimeout(() => notification.close(), 5000);
+        }
+        
+        // In-app notification
+        this.showInAppNotification(title, message, onClick);
+    }
+
+    showInAppNotification(title, message, onClick = null) {
+        const container = document.getElementById('notifications');
+        const notification = document.createElement('div');
+        notification.className = 'notification-alert';
+        
+        notification.innerHTML = `
+            <div class="notification-content">
+                <div class="notification-title">${this.escapeHtml(title)}</div>
+                <div class="notification-message">${this.escapeHtml(message.substring(0, 100))}</div>
+            </div>
+            <div class="notification-actions">
+                ${onClick ? '<button class="notification-btn primary" data-action="open">Open</button>' : ''}
+                <button class="notification-btn secondary" data-action="close">×</button>
+            </div>
+        `;
+        
+        // Add event listeners
+        const openBtn = notification.querySelector('[data-action="open"]');
+        const closeBtn = notification.querySelector('[data-action="close"]');
+        
+        if (openBtn && onClick) {
+            openBtn.addEventListener('click', () => {
+                onClick();
+                notification.remove();
+            });
+        }
+        
+        closeBtn.addEventListener('click', () => {
+            notification.remove();
+        });
+        
+        container.appendChild(notification);
+        
+        // Auto remove after 8 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 8000);
+    }
+
+    updateUnreadIndicators() {
+        // Update room tiles with unread counts
+        Array.from(this.rooms.values()).forEach(room => {
+            const unreadCount = parseInt(localStorage.getItem(`unread_room_${room.id}`) || '0');
+            const tile = document.querySelector(`[data-room-id="${room.id}"]`);
+            if (tile) {
+                this.updateTileUnreadBadge(tile, unreadCount);
+            }
+        });
+        
+        // Update peer tiles with unread counts
+        Array.from(this.peers.values()).forEach(peer => {
+            const unreadCount = parseInt(localStorage.getItem(`unread_peer_${peer.id}`) || '0');
+            const tile = document.querySelector(`[data-peer-id="${peer.id}"]`);
+            if (tile) {
+                this.updateTileUnreadBadge(tile, unreadCount);
+            }
+        });
+        
+        // Update lobby stats
+        this.updateLobbyStats();
+    }
+
+    updateTileUnreadBadge(tile, count) {
+        let badge = tile.querySelector('.unread-badge');
+        
+        if (count > 0) {
+            if (!badge) {
+                badge = document.createElement('div');
+                badge.className = 'unread-badge';
+                tile.appendChild(badge);
+            }
+            badge.textContent = count > 99 ? '99+' : count.toString();
+            badge.style.display = 'block';
+        } else if (badge) {
+            badge.style.display = 'none';
+        }
+    }
+
+    clearUnreadCount(type, chatId) {
+        const key = `unread_${type}_${chatId}`;
+        localStorage.removeItem(key);
+        this.updateUnreadIndicators();
+    }
+
+    playNotificationSound() {
+        // Create a subtle notification sound
+        if (this.notificationSoundEnabled) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+            
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.2);
+        }
+    }
+
+    // Request notification permission on app start
+    requestNotificationPermission() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    this.showNotification('Notifications enabled!', 'success');
+                }
+            });
+        }
+    }
+
     // Chat Management
     startChat(peerId) {
         this.currentChat = { type: 'peer', id: peerId };
@@ -580,8 +967,14 @@ class P2PWebChat {
         document.getElementById('chatTitle').textContent = `Chat with ${peer.name}`;
         document.getElementById('chatPanel').classList.remove('hidden');
         
+        // Clear unread count when opening chat
+        this.clearUnreadCount('peer', peerId);
+        
         this.loadChatHistory(peerId);
         this.initWebRTCConnection(peerId);
+        
+        // Add to recent activity
+        this.addRecentActivity('connect', `Started chat with ${peer.name}`);
     }
 
     startRoomChat(roomId) {
@@ -591,7 +984,13 @@ class P2PWebChat {
         document.getElementById('chatTitle').textContent = `Room: ${room.name}`;
         document.getElementById('chatPanel').classList.remove('hidden');
         
+        // Clear unread count when opening chat
+        this.clearUnreadCount('room', roomId);
+        
         this.loadChatHistory(roomId);
+        
+        // Add to recent activity
+        this.addRecentActivity('join', `Opened room ${room.name}`);
     }
 
     closeChat() {
@@ -606,30 +1005,36 @@ class P2PWebChat {
 
     sendMessage() {
         const input = document.getElementById('messageInput');
-        const message = input.value.trim();
+        const text = input.value.trim();
         
-        if (!message || !this.currentChat) return;
-
-        const messageData = {
+        if (!text || !this.currentChat) return;
+        
+        const message = {
             id: this.generateId(),
-            text: message,
-            timestamp: new Date(),
-            sender: this.currentUser.userId
+            text: text,
+            timestamp: new Date().toISOString(),
+            userId: this.currentUser.userId,
+            userName: this.currentUser.name
         };
-
-        this.displayMessage(messageData, true);
+        
+        // Display message immediately
+        this.displayMessage(message, true);
+        this.saveChatMessage(this.currentChat.id, message);
+        
+        // Increment message count
+        this.incrementMessageCount();
         
         if (this.currentChat.type === 'peer') {
-            this.sendPeerMessage(this.currentChat.id, messageData);
+            this.sendPeerMessage(this.currentChat.id, message);
         } else if (this.currentChat.type === 'room') {
-            this.sendRoomMessage(this.currentChat.id, messageData);
+            this.socket.emit('room:message', {
+                roomId: this.currentChat.id,
+                message: message
+            });
         }
-
+        
         input.value = '';
-        this.saveChatMessage(this.currentChat.id, messageData);
-
-        // stop typing indicator
-        this.showTyping(false);
+        this.autoResizeTextarea(input);
     }
 
     displayMessage(message, isSent) {
@@ -815,10 +1220,22 @@ class P2PWebChat {
             const parsed = JSON.parse(data);
             
             if (parsed.type === 'message') {
-                this.displayMessage(parsed.data, false);
+                // Always save the message
                 this.saveChatMessage(peerId, parsed.data);
+                
+                if (this.currentChat && this.currentChat.type === 'peer' && this.currentChat.id === peerId) {
+                    // Display message if chat is currently open
+                    this.displayMessage(parsed.data, false);
+                } else {
+                    // Handle background message
+                    this.handleBackgroundMessage('peer', peerId, parsed.data);
+                }
+                
+                // Always show notification
                 const peer = this.peers.get(peerId);
-                this.maybeNotify(`Message from ${peer ? peer.name : 'Peer'}`, parsed.data.text);
+                this.showNotificationAlert(`Message from ${peer ? peer.name : 'Peer'}`, parsed.data.text, () => {
+                    this.startChat(peerId);
+                });
             } else if (parsed.type === 'typing') {
                 if (this.currentChat && this.currentChat.type === 'peer' && this.currentChat.id === peerId) {
                     this.showTyping(true, peerId);

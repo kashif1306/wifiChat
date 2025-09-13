@@ -48,14 +48,59 @@
         <main class="main-content">
             <!-- Lobby Tab -->
             <div id="lobby" class="tab-content active">
+                <div class="lobby-header">
+                    <div class="lobby-stats">
+                        <div class="stat-card">
+                            <div class="stat-number" id="roomCount">0</div>
+                            <div class="stat-label">Joined Rooms</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="peerCount">0</div>
+                            <div class="stat-label">Connected Peers</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="messageCount">0</div>
+                            <div class="stat-label">Messages Today</div>
+                        </div>
+                    </div>
+                </div>
                 <div class="content-grid">
                     <div class="section">
-                        <h3>My Rooms</h3>
-                        <div id="myRooms" class="tile-grid"></div>
+                        <div class="section-header">
+                            <h3>🏠 My Rooms</h3>
+                            <span class="section-badge" id="myRoomsBadge">0</span>
+                        </div>
+                        <div id="myRooms" class="enhanced-tile-grid">
+                            <div class="empty-state" id="emptyRooms">
+                                <div class="empty-icon">🏠</div>
+                                <p>No rooms joined yet</p>
+                                <small>Create or join a room to start chatting!</small>
+                            </div>
+                        </div>
                     </div>
                     <div class="section">
-                        <h3>Active Connections</h3>
-                        <div id="activeConnections" class="connection-list"></div>
+                        <div class="section-header">
+                            <h3>👥 Active Connections</h3>
+                            <span class="section-badge" id="connectionsBadge">0</span>
+                        </div>
+                        <div id="activeConnections" class="enhanced-connection-list">
+                            <div class="empty-state" id="emptyConnections">
+                                <div class="empty-icon">👥</div>
+                                <p>No active connections</p>
+                                <small>Connect with peers to start chatting!</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="recent-activity">
+                    <div class="section-header">
+                        <h3>📈 Recent Activity</h3>
+                    </div>
+                    <div id="recentActivity" class="activity-feed">
+                        <div class="empty-state">
+                            <div class="empty-icon">📈</div>
+                            <p>No recent activity</p>
+                        </div>
                     </div>
                 </div>
             </div>
