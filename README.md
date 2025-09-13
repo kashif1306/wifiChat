@@ -1,4 +1,6 @@
-# P2P WebChat Application
+# Lumen Chat Web-Application
+
+## Name update
 
 A complete peer-to-peer webchat application that works over LAN and the internet using WebRTC and Socket.IO. Features real-time messaging, file transfers, public/private rooms, and direct peer connections with no database required.
 
