@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P WebChat</title>
+    <title>WiFi Chat</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <!-- User Setup Modal -->
     <div id="userSetupModal" class="modal">
         <div class="modal-content">
-            <h2>Welcome to P2P WebChat</h2>
+            <h2>Welcome to WiFi Chat</h2>
             <p>Enter your display name to get started:</p>
             <input type="text" id="displayNameInput" placeholder="Your display name" maxlength="30">
             <input type="url" id="avatarUrlInput" placeholder="Avatar image URL (optional)">
@@ -26,7 +26,7 @@
     <div id="appContainer" class="hidden">
         <!-- Header -->
         <header class="app-header">
-            <h1 class="brand">P2P WebChat</h1>
+            <h1 class="brand">WiFi Chat</h1>
             <div class="user-info">
                 <button id="themeToggleBtn" class="btn-secondary">Toggle Theme</button>
                 <span id="currentUserName"></span>
@@ -41,7 +41,6 @@
             <button class="tab-btn active" data-tab="lobby">Lobby</button>
             <button class="tab-btn" data-tab="public-rooms">Public Rooms</button>
             <button class="tab-btn" data-tab="private-rooms">Private Rooms</button>
-            <button class="tab-btn" data-tab="peers">Peers</button>
         </nav>
 
         <!-- Main Content Area -->
@@ -53,10 +52,6 @@
                         <div class="stat-card">
                             <div class="stat-number" id="roomCount">0</div>
                             <div class="stat-label">Joined Rooms</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number" id="peerCount">0</div>
-                            <div class="stat-label">Connected Peers</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-number" id="messageCount">0</div>
@@ -75,19 +70,6 @@
                                 <div class="empty-icon">🏠</div>
                                 <p>No rooms joined yet</p>
                                 <small>Create or join a room to start chatting!</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="section">
-                        <div class="section-header">
-                            <h3>👥 Active Connections</h3>
-                            <span class="section-badge" id="connectionsBadge">0</span>
-                        </div>
-                        <div id="activeConnections" class="enhanced-connection-list">
-                            <div class="empty-state" id="emptyConnections">
-                                <div class="empty-icon">👥</div>
-                                <p>No active connections</p>
-                                <small>Connect with peers to start chatting!</small>
                             </div>
                         </div>
                     </div>
@@ -127,14 +109,6 @@
                 <div id="privateRoomsList" class="tile-grid"></div>
             </div>
 
-            <!-- Peers Tab -->
-            <div id="peers" class="tab-content">
-                <div class="section-header">
-                    <h3>Connected Peers</h3>
-                    <input type="text" id="peerSearchInput" placeholder="Search peers..." class="search-input">
-                </div>
-                <div id="peersList" class="tile-grid"></div>
-            </div>
         </main>
 
         <!-- Chat Panel (Sidebar) -->

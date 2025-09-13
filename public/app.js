@@ -1,23 +1,11 @@
-// P2P WebChat Client Application
-class P2PWebChat {
+// WiFi Chat Client Application
+class WiFiChat {
     constructor() {
         this.socket = null;
         this.currentUser = null;
-        this.peers = new Map();
         this.rooms = new Map();
-        this.peerConnections = new Map();
-        this.dataChannels = new Map();
-        this.fileTransfers = new Map();
         this.currentChat = null;
         this.notificationSoundEnabled = true;
-        
-        // WebRTC Configuration
-        this.rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
 
         this.init();
     }
@@ -69,13 +57,7 @@ class P2PWebChat {
 
     onReact(messageId, emoji) {
         const action = 'toggle';
-        if (this.currentChat.type === 'peer') {
-            const dc = this.dataChannels.get(this.currentChat.id);
-            if (dc && dc.readyState === 'open') {
-                dc.send(JSON.stringify({ type: 'reaction', data: { messageId, emoji, action, userId: this.currentUser.userId } }));
-            }
-            this.applyReaction(messageId, emoji, this.currentUser.userId, action);
-        } else if (this.currentChat.type === 'room') {
+        if (this.currentChat.type === 'room') {
             this.socket.emit('room:reaction', { roomId: this.currentChat.id, messageId, emoji, action });
             this.applyReaction(messageId, emoji, this.currentUser.userId, action);
         }
@@ -169,7 +151,7 @@ class P2PWebChat {
         });
 
         this.socket.on('user:list', (users) => {
-            this.updatePeersList(users);
+            // Users list is no longer needed for peer functionality
         });
 
         this.socket.on('room:list', (rooms) => {
@@ -211,18 +193,6 @@ class P2PWebChat {
             this.showNotification(data.message, 'error');
         });
 
-        // WebRTC Signaling
-        this.socket.on('signal:offer', (data) => {
-            this.handleWebRTCOffer(data);
-        });
-
-        this.socket.on('signal:answer', (data) => {
-            this.handleWebRTCAnswer(data);
-        });
-
-        this.socket.on('signal:ice', (data) => {
-            this.handleWebRTCIce(data);
-        });
 
         this.socket.on('room:update', (data) => {
             // Update room in local storage
@@ -239,18 +209,6 @@ class P2PWebChat {
             }
         });
 
-        // File Transfer Fallback
-        this.socket.on('file:start', (data) => {
-            this.handleFileTransferStart(data);
-        });
-
-        this.socket.on('file:chunk', (data) => {
-            this.handleFileTransferChunk(data);
-        });
-
-        this.socket.on('file:end', (data) => {
-            this.handleFileTransferEnd(data);
-        });
 
         // Room message handling
         this.socket.on('room:message', (data) => {
@@ -396,10 +354,6 @@ class P2PWebChat {
             });
         }
 
-        // Peer Search
-        document.getElementById('peerSearchInput').addEventListener('input', (e) => {
-            this.filterPeers(e.target.value);
-        });
 
         // Theme toggle button
         const themeBtn = document.getElementById('themeToggleBtn');
@@ -499,27 +453,7 @@ class P2PWebChat {
         this.socket.emit('room:joinByPin', { pin });
     }
 
-    // Peer and Room List Updates
-    updatePeersList(users) {
-        const container = document.getElementById('peersList');
-        container.innerHTML = '';
-
-        const filteredUsers = users.filter(user => user.id !== this.currentUser.userId);
-        
-        filteredUsers.forEach(user => {
-            const tile = this.createPeerTile(user);
-            container.appendChild(tile);
-        });
-
-        this.peers.clear();
-        users.forEach(user => {
-            this.peers.set(user.id, user);
-        });
-        
-        // Update lobby stats and connections
-        this.updateLobbyStats();
-        this.updateActiveConnections(filteredUsers);
-    }
+    // Room List Updates
 
     updateRoomsList(rooms) {
         const publicContainer = document.getElementById('publicRoomsList');
@@ -547,21 +481,6 @@ class P2PWebChat {
         this.updateLobbyStats();
     }
 
-    createPeerTile(user) {
-        const tile = document.createElement('div');
-        tile.className = 'tile';
-        tile.innerHTML = `
-            <div class="tile-header">
-                <span class="tile-title">${this.escapeHtml(user.name)}</span>
-                <span class="connection-status"></span>
-            </div>
-            <div class="tile-info">ID: ${user.id.substring(0, 8)}...</div>
-            <div class="tile-actions">
-                <button class="tile-btn" onclick="app.startChat('${user.id}')">Chat</button>
-            </div>
-        `;
-        return tile;
-    }
 
     createRoomTile(room) {
         const tile = document.createElement('div');
@@ -585,32 +504,18 @@ class P2PWebChat {
         return tile;
     }
 
-    filterPeers(searchTerm) {
-        const tiles = document.querySelectorAll('#peersList .tile');
-        tiles.forEach(tile => {
-            const title = tile.querySelector('.tile-title').textContent.toLowerCase();
-            const info = tile.querySelector('.tile-info').textContent.toLowerCase();
-            const matches = title.includes(searchTerm.toLowerCase()) || info.includes(searchTerm.toLowerCase());
-            tile.style.display = matches ? 'block' : 'none';
-        });
-    }
 
     // New methods for lobby updates
     updateLobbyStats() {
         const joinedRooms = Array.from(this.rooms.values()).filter(room => 
             room.members.some(m => m.id === this.currentUser.userId)
         );
-        const connectedPeers = Array.from(this.peers.values()).filter(user => 
-            user.id !== this.currentUser.userId
-        );
         
         // Update stat cards
         document.getElementById('roomCount').textContent = joinedRooms.length;
-        document.getElementById('peerCount').textContent = connectedPeers.length;
         
         // Update section badges
         document.getElementById('myRoomsBadge').textContent = joinedRooms.length;
-        document.getElementById('connectionsBadge').textContent = connectedPeers.length;
         
         // Get message count from localStorage
         const messageCount = this.getTodayMessageCount();
@@ -645,29 +550,6 @@ class P2PWebChat {
         }
     }
 
-    updateActiveConnections(users) {
-        const container = document.getElementById('activeConnections');
-        const emptyState = document.getElementById('emptyConnections');
-        
-        if (users.length === 0) {
-            emptyState.style.display = 'block';
-            // Clear any existing connection items
-            const existingItems = container.querySelectorAll('.connection-item');
-            existingItems.forEach(item => item.remove());
-        } else {
-            emptyState.style.display = 'none';
-            
-            // Clear existing items
-            const existingItems = container.querySelectorAll('.connection-item');
-            existingItems.forEach(item => item.remove());
-            
-            // Add active connections
-            users.forEach(user => {
-                const item = this.createConnectionItem(user);
-                container.appendChild(item);
-            });
-        }
-    }
 
     createLobbyRoomTile(room) {
         const tile = document.createElement('div');
@@ -697,32 +579,6 @@ class P2PWebChat {
         return tile;
     }
 
-    createConnectionItem(user) {
-        const item = document.createElement('div');
-        item.className = 'connection-item';
-        item.setAttribute('data-peer-id', user.id);
-        
-        const connectionStatus = this.peerConnections.has(user.id) ? 'connected' : 'available';
-        const lastSeen = this.formatLastSeen(user.joinedAt);
-        
-        item.innerHTML = `
-            <div class="connection-avatar" style="background-image: url('${user.avatarUrl || ''}')">
-                ${!user.avatarUrl ? user.name.charAt(0).toUpperCase() : ''}
-            </div>
-            <div class="connection-info">
-                <div class="connection-name">${this.escapeHtml(user.name)}</div>
-                <div class="connection-status-text">
-                    <span class="status-dot ${connectionStatus}"></span>
-                    ${connectionStatus === 'connected' ? 'Connected' : 'Available'} • ${lastSeen}
-                </div>
-            </div>
-            <div class="connection-actions">
-                <button class="connection-btn" onclick="app.startChat('${user.id}')" title="Start Chat">💬</button>
-                <button class="connection-btn" onclick="app.initWebRTCConnection('${user.id}')" title="Connect">🔗</button>
-            </div>
-        `;
-        return item;
-    }
 
     addRecentActivity(type, description, roomId = null) {
         const container = document.getElementById('recentActivity');
@@ -808,7 +664,7 @@ class P2PWebChat {
         // Add to recent activity
         const description = type === 'room' 
             ? `New message in ${this.rooms.get(chatId)?.name || 'room'}`
-            : `Message from ${this.peers.get(chatId)?.name || 'peer'}`;
+            : `New message`;
         this.addRecentActivity('message', description, chatId);
         
         // Play notification sound if enabled
@@ -892,15 +748,6 @@ class P2PWebChat {
             }
         });
         
-        // Update peer tiles with unread counts
-        Array.from(this.peers.values()).forEach(peer => {
-            const unreadCount = parseInt(localStorage.getItem(`unread_peer_${peer.id}`) || '0');
-            const tile = document.querySelector(`[data-peer-id="${peer.id}"]`);
-            if (tile) {
-                this.updateTileUnreadBadge(tile, unreadCount);
-            }
-        });
-        
         // Update lobby stats
         this.updateLobbyStats();
     }
@@ -960,22 +807,6 @@ class P2PWebChat {
     }
 
     // Chat Management
-    startChat(peerId) {
-        this.currentChat = { type: 'peer', id: peerId };
-        const peer = this.peers.get(peerId);
-        
-        document.getElementById('chatTitle').textContent = `Chat with ${peer.name}`;
-        document.getElementById('chatPanel').classList.remove('hidden');
-        
-        // Clear unread count when opening chat
-        this.clearUnreadCount('peer', peerId);
-        
-        this.loadChatHistory(peerId);
-        this.initWebRTCConnection(peerId);
-        
-        // Add to recent activity
-        this.addRecentActivity('connect', `Started chat with ${peer.name}`);
-    }
 
     startRoomChat(roomId) {
         this.currentChat = { type: 'room', id: roomId };
@@ -1024,9 +855,7 @@ class P2PWebChat {
         // Increment message count
         this.incrementMessageCount();
         
-        if (this.currentChat.type === 'peer') {
-            this.sendPeerMessage(this.currentChat.id, message);
-        } else if (this.currentChat.type === 'room') {
+        if (this.currentChat.type === 'room') {
             this.socket.emit('room:message', {
                 roomId: this.currentChat.id,
                 message: message
@@ -1067,11 +896,7 @@ class P2PWebChat {
         avatar.className = 'avatar-sm';
         let avatarUrl = null;
         if (!isSent) {
-            if (this.currentChat.type === 'peer') {
-                const peer = this.peers.get(this.currentChat.id);
-                avatarUrl = peer && peer.avatarUrl ? peer.avatarUrl : null;
-                avatar.textContent = peer && peer.name ? peer.name.charAt(0).toUpperCase() : '';
-            } else if (this.currentChat.type === 'room') {
+            if (this.currentChat.type === 'room') {
                 avatar.textContent = 'R';
             }
         } else if (this.currentUser && this.currentUser.avatarUrl) {
@@ -1093,168 +918,6 @@ class P2PWebChat {
         container.scrollTop = container.scrollHeight;
     }
 
-    // WebRTC Implementation
-    async initWebRTCConnection(peerId) {
-        if (this.peerConnections.has(peerId)) return;
-
-        const pc = new RTCPeerConnection(this.rtcConfig);
-        this.peerConnections.set(peerId, pc);
-
-        // Create data channel
-        const dataChannel = pc.createDataChannel('messages', { ordered: true });
-        this.setupDataChannel(dataChannel, peerId);
-
-        pc.ondatachannel = (event) => {
-            this.setupDataChannel(event.channel, peerId);
-        };
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.socket.emit('signal:ice', {
-                    targetUserId: peerId,
-                    candidate: event.candidate
-                });
-            }
-        };
-
-        // Create offer
-        try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            
-            this.socket.emit('signal:offer', {
-                targetUserId: peerId,
-                offer: offer
-            });
-        } catch (error) {
-            console.error('Error creating WebRTC offer:', error);
-        }
-    }
-
-    async handleWebRTCOffer(data) {
-        const pc = new RTCPeerConnection(this.rtcConfig);
-        this.peerConnections.set(data.fromUserId, pc);
-
-        pc.ondatachannel = (event) => {
-            this.setupDataChannel(event.channel, data.fromUserId);
-        };
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.socket.emit('signal:ice', {
-                    targetUserId: data.fromUserId,
-                    candidate: event.candidate
-                });
-            }
-        };
-
-        try {
-            await pc.setRemoteDescription(data.offer);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            
-            this.socket.emit('signal:answer', {
-                targetUserId: data.fromUserId,
-                answer: answer
-            });
-        } catch (error) {
-            console.error('Error handling WebRTC offer:', error);
-        }
-    }
-
-    async handleWebRTCAnswer(data) {
-        const pc = this.peerConnections.get(data.fromUserId);
-        if (pc) {
-            try {
-                await pc.setRemoteDescription(data.answer);
-            } catch (error) {
-                console.error('Error handling WebRTC answer:', error);
-            }
-        }
-    }
-
-    async handleWebRTCIce(data) {
-        const pc = this.peerConnections.get(data.fromUserId);
-        if (pc) {
-            try {
-                await pc.addIceCandidate(data.candidate);
-            } catch (error) {
-                console.error('Error handling ICE candidate:', error);
-            }
-        }
-    }
-
-    setupDataChannel(dataChannel, peerId) {
-        this.dataChannels.set(peerId, dataChannel);
-        
-        dataChannel.onopen = () => {
-            console.log('Data channel opened with', peerId);
-            this.updatePeerConnectionStatus(peerId, 'connected');
-        };
-
-        dataChannel.onclose = () => {
-            console.log('Data channel closed with', peerId);
-            this.updatePeerConnectionStatus(peerId, 'disconnected');
-        };
-
-        dataChannel.onmessage = (event) => {
-            this.handleDataChannelMessage(peerId, event.data);
-        };
-    }
-
-    sendPeerMessage(peerId, message) {
-        const dataChannel = this.dataChannels.get(peerId);
-        if (dataChannel && dataChannel.readyState === 'open') {
-            dataChannel.send(JSON.stringify({ type: 'message', data: message }));
-        } else {
-            // Fallback to server relay
-            this.socket.emit('message:send', {
-                targetUserId: peerId,
-                message: message
-            });
-        }
-    }
-
-    handleDataChannelMessage(peerId, data) {
-        try {
-            const parsed = JSON.parse(data);
-            
-            if (parsed.type === 'message') {
-                // Always save the message
-                this.saveChatMessage(peerId, parsed.data);
-                
-                if (this.currentChat && this.currentChat.type === 'peer' && this.currentChat.id === peerId) {
-                    // Display message if chat is currently open
-                    this.displayMessage(parsed.data, false);
-                } else {
-                    // Handle background message
-                    this.handleBackgroundMessage('peer', peerId, parsed.data);
-                }
-                
-                // Always show notification
-                const peer = this.peers.get(peerId);
-                this.showNotificationAlert(`Message from ${peer ? peer.name : 'Peer'}`, parsed.data.text, () => {
-                    this.startChat(peerId);
-                });
-            } else if (parsed.type === 'typing') {
-                if (this.currentChat && this.currentChat.type === 'peer' && this.currentChat.id === peerId) {
-                    this.showTyping(true, peerId);
-                    clearTimeout(this.typingTimeout);
-                    this.typingTimeout = setTimeout(() => this.showTyping(false), 1200);
-                }
-            } else if (parsed.type === 'edit') {
-                this.applyMessageEdit(parsed.data.messageId, parsed.data.newText);
-            } else if (parsed.type === 'delete') {
-                this.applyMessageDelete(parsed.data.messageId);
-            } else if (parsed.type === 'reaction') {
-                this.applyReaction(parsed.data.messageId, parsed.data.emoji, parsed.data.userId, parsed.data.action);
-            } else if (parsed.type === 'file-chunk') {
-                this.handleFileChunk(peerId, parsed.data);
-            }
-        } catch (error) {
-            console.error('Error parsing data channel message:', error);
-        }
-    }
 
     onEditMessage(messageId) {
         const el = document.querySelector(`[data-message-id="${messageId}"] .message-text`);
@@ -1270,12 +933,7 @@ class P2PWebChat {
 
         // Persist in IndexedDB not strictly necessary for demo; skip for simplicity
 
-        if (this.currentChat.type === 'peer') {
-            const dc = this.dataChannels.get(this.currentChat.id);
-            if (dc && dc.readyState === 'open') {
-                dc.send(JSON.stringify({ type: 'edit', data: { messageId, newText: trimmed } }));
-            }
-        } else if (this.currentChat.type === 'room') {
+        if (this.currentChat.type === 'room') {
             this.socket.emit('room:message-edit', { roomId: this.currentChat.id, messageId, newText: trimmed });
         }
     }
@@ -1283,12 +941,7 @@ class P2PWebChat {
     onDeleteMessage(messageId) {
         if (!confirm('Delete this message?')) return;
         this.applyMessageDelete(messageId);
-        if (this.currentChat.type === 'peer') {
-            const dc = this.dataChannels.get(this.currentChat.id);
-            if (dc && dc.readyState === 'open') {
-                dc.send(JSON.stringify({ type: 'delete', data: { messageId } }));
-            }
-        } else if (this.currentChat.type === 'room') {
+        if (this.currentChat.type === 'room') {
             this.socket.emit('room:message-delete', { roomId: this.currentChat.id, messageId });
         }
     }
@@ -1312,227 +965,11 @@ class P2PWebChat {
         }
     }
 
-    updatePeerConnectionStatus(peerId, status) {
-        // Update UI to show connection status
-        const peerTiles = document.querySelectorAll(`[onclick*="${peerId}"]`);
-        peerTiles.forEach(tile => {
-            const statusEl = tile.querySelector('.connection-status');
-            if (statusEl) {
-                statusEl.className = `connection-status ${status}`;
-            }
-        });
-    }
-
-    // File Transfer Implementation
-    async sendFile(file) {
-        if (!this.currentChat || this.currentChat.type !== 'peer') {
-            this.showNotification('File sharing only available in peer chats', 'error');
-            return;
-        }
-
-        const fileId = this.generateId();
-        const chunkSize = 512 * 1024; // 512KB chunks
-        const totalChunks = Math.ceil(file.size / chunkSize);
-        
-        const fileData = {
-            id: fileId,
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            totalChunks: totalChunks
-        };
-
-        this.fileTransfers.set(fileId, {
-            ...fileData,
-            chunks: new Map(),
-            progress: 0,
-            direction: 'sending'
-        });
-
-        this.showFileProgress(fileData, 0);
-
-        const dataChannel = this.dataChannels.get(this.currentChat.id);
-        const useWebRTC = dataChannel && dataChannel.readyState === 'open';
-
-        if (useWebRTC) {
-            // Send via WebRTC
-            dataChannel.send(JSON.stringify({
-                type: 'file-start',
-                data: fileData
-            }));
-
-            // Send chunks
-            for (let i = 0; i < totalChunks; i++) {
-                const start = i * chunkSize;
-                const end = Math.min(start + chunkSize, file.size);
-                const chunk = file.slice(start, end);
-                
-                const arrayBuffer = await chunk.arrayBuffer();
-                const base64 = this.arrayBufferToBase64(arrayBuffer);
-                
-                dataChannel.send(JSON.stringify({
-                    type: 'file-chunk',
-                    data: { fileId, chunkIndex: i, chunk: base64 }
-                }));
-
-                const progress = ((i + 1) / totalChunks) * 100;
-                this.updateFileProgress(fileId, progress);
-                
-                // Small delay to prevent overwhelming
-                await new Promise(resolve => setTimeout(resolve, 10));
-            }
-
-            dataChannel.send(JSON.stringify({
-                type: 'file-end',
-                data: { fileId }
-            }));
-        } else {
-            // Fallback to server relay
-            this.socket.emit('file:start', {
-                targetUserId: this.currentChat.id,
-                fileId: fileId,
-                fileName: file.name,
-                fileSize: file.size,
-                totalChunks: totalChunks
-            });
-
-            // Send chunks via socket
-            for (let i = 0; i < totalChunks; i++) {
-                const start = i * chunkSize;
-                const end = Math.min(start + chunkSize, file.size);
-                const chunk = file.slice(start, end);
-                
-                const arrayBuffer = await chunk.arrayBuffer();
-                const base64 = this.arrayBufferToBase64(arrayBuffer);
-                
-                this.socket.emit('file:chunk', {
-                    targetUserId: this.currentChat.id,
-                    fileId: fileId,
-                    chunkIndex: i,
-                    chunk: base64
-                });
-
-                const progress = ((i + 1) / totalChunks) * 100;
-                this.updateFileProgress(fileId, progress);
-                
-                await new Promise(resolve => setTimeout(resolve, 50));
-            }
-
-            this.socket.emit('file:end', {
-                targetUserId: this.currentChat.id,
-                fileId: fileId
-            });
-        }
-    }
-
-    handleFileTransferStart(data) {
-        this.fileTransfers.set(data.fileId, {
-            id: data.fileId,
-            name: data.fileName,
-            size: data.fileSize,
-            totalChunks: data.totalChunks,
-            chunks: new Map(),
-            progress: 0,
-            direction: 'receiving'
-        });
-
-        // Normalize shape for UI helpers
-        this.showFileProgress({ id: data.fileId, name: data.fileName }, 0);
-        this.displayFileMessage({ name: data.fileName, size: data.fileSize }, false);
-    }
-
-    handleFileTransferChunk(data) {
-        const transfer = this.fileTransfers.get(data.fileId);
-        if (transfer) {
-            transfer.chunks.set(data.chunkIndex, data.chunk);
-            const progress = (transfer.chunks.size / transfer.totalChunks) * 100;
-            transfer.progress = progress;
-            this.updateFileProgress(data.fileId, progress);
-        }
-    }
-
-    handleFileTransferEnd(data) {
-        const transfer = this.fileTransfers.get(data.fileId);
-        if (transfer && transfer.chunks.size === transfer.totalChunks) {
-            this.assembleFile(transfer);
-        }
-    }
-
-    async assembleFile(transfer) {
-        const chunks = [];
-        for (let i = 0; i < transfer.totalChunks; i++) {
-            const base64Chunk = transfer.chunks.get(i);
-            if (base64Chunk) {
-                chunks.push(this.base64ToArrayBuffer(base64Chunk));
-            }
-        }
-
-        const blob = new Blob(chunks);
-        const url = URL.createObjectURL(blob);
-        
-        // Store in IndexedDB
-        await this.storeFile(transfer.id, {
-            name: transfer.name,
-            size: transfer.size,
-            blob: blob,
-            url: url
-        });
-
-        this.hideFileProgress();
-        this.showNotification(`File received: ${transfer.name}`, 'success');
-        
-        // Auto-download
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = transfer.name;
-        a.click();
-    }
-
-    showFileProgress(fileData, progress) {
-        document.getElementById('fileTransferProgress').classList.remove('hidden');
-        const displayName = fileData.name || fileData.fileName || '';
-        document.getElementById('progressFileName').textContent = displayName;
-        const id = fileData.id || fileData.fileId;
-        if (id) this.updateFileProgress(id, progress);
-    }
-
-    updateFileProgress(fileId, progress) {
-        document.getElementById('progressPercent').textContent = `${Math.round(progress)}%`;
-        document.getElementById('progressFill').style.width = `${progress}%`;
-    }
-
-    hideFileProgress() {
-        document.getElementById('fileTransferProgress').classList.add('hidden');
-    }
-
-    displayFileMessage(fileData, isSent) {
-        const container = document.getElementById('chatMessages');
-        const messageEl = document.createElement('div');
-        messageEl.className = `message ${isSent ? 'sent' : 'received'}`;
-        
-        const name = fileData.name || fileData.fileName || 'file';
-        const size = typeof fileData.size === 'number' ? fileData.size : (fileData.fileSize || 0);
-        messageEl.innerHTML = `
-            <div class="file-message">
-                <div class="file-info">
-                    <span class="file-icon">📎</span>
-                    <div class="file-details">
-                        <div class="file-name">${this.escapeHtml(name)}</div>
-                        <div class="file-size">${this.formatFileSize(size)}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="message-time">${new Date().toLocaleTimeString()}</div>
-        `;
-        
-        container.appendChild(messageEl);
-        container.scrollTop = container.scrollHeight;
-    }
 
     // IndexedDB Implementation
     async initializeIndexedDB() {
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open('P2PWebChat', 1);
+            const request = indexedDB.open('WiFiChat', 1);
             
             request.onerror = () => reject(request.error);
             request.onsuccess = () => {
@@ -1550,10 +987,6 @@ class P2PWebChat {
                     messagesStore.createIndex('timestamp', 'timestamp', { unique: false });
                 }
                 
-                // Files store
-                if (!db.objectStoreNames.contains('files')) {
-                    const filesStore = db.createObjectStore('files', { keyPath: 'id' });
-                }
             };
         });
     }
@@ -1592,18 +1025,6 @@ class P2PWebChat {
         };
     }
 
-    async storeFile(fileId, fileData) {
-        if (!this.db) return;
-        
-        const transaction = this.db.transaction(['files'], 'readwrite');
-        const store = transaction.objectStore('files');
-        
-        await store.add({
-            id: fileId,
-            ...fileData,
-            timestamp: new Date()
-        });
-    }
 
     // Room messaging
     sendRoomMessage(roomId, message) {
@@ -1625,12 +1046,7 @@ class P2PWebChat {
         if (this._lastTypingEmit && now - this._lastTypingEmit < 500) return;
         this._lastTypingEmit = now;
 
-        if (this.currentChat.type === 'peer') {
-            const dc = this.dataChannels.get(this.currentChat.id);
-            if (dc && dc.readyState === 'open') {
-                dc.send(JSON.stringify({ type: 'typing', data: { at: now } }));
-            }
-        } else if (this.currentChat.type === 'room') {
+        if (this.currentChat.type === 'room') {
             this.socket.emit('room:typing', { roomId: this.currentChat.id, isTyping: true });
         }
     }
@@ -1640,8 +1056,7 @@ class P2PWebChat {
         if (!el) return;
         if (isTyping) {
             if (this.currentChat && this.currentChat.type === 'room' && fromId) {
-                const user = this.peers.get(fromId);
-                el.textContent = `${user ? user.name : 'Someone'} is typing…`;
+                el.textContent = 'Someone is typing…';
             } else {
                 el.textContent = 'Typing…';
             }
@@ -1657,31 +1072,6 @@ class P2PWebChat {
         return div.innerHTML;
     }
 
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    arrayBufferToBase64(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary);
-    }
-
-    base64ToArrayBuffer(base64) {
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
-        return bytes.buffer;
-    }
 
     leaveRoom(roomId) {
         this.socket.emit('room:leave', { roomId });
@@ -1719,4 +1109,4 @@ class P2PWebChat {
 }
 
 // Initialize the application
-const app = new P2PWebChat();
+const app = new WiFiChat();

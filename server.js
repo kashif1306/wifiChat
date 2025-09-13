@@ -224,66 +224,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // WebRTC signaling
-  socket.on('signal:offer', ({ targetUserId, offer }) => {
-    const targetUser = users.get(targetUserId);
-    if (targetUser) {
-      const userId = socketToUser.get(socket.id);
-      io.to(targetUser.socketId).emit('signal:offer', { fromUserId: userId, offer });
-    }
-  });
-
-  socket.on('signal:answer', ({ targetUserId, answer }) => {
-    const targetUser = users.get(targetUserId);
-    if (targetUser) {
-      const userId = socketToUser.get(socket.id);
-      io.to(targetUser.socketId).emit('signal:answer', { fromUserId: userId, answer });
-    }
-  });
-
-  socket.on('signal:ice', ({ targetUserId, candidate }) => {
-    const targetUser = users.get(targetUserId);
-    if (targetUser) {
-      const userId = socketToUser.get(socket.id);
-      io.to(targetUser.socketId).emit('signal:ice', { fromUserId: userId, candidate });
-    }
-  });
-
-  // File transfer fallback
-  socket.on('file:start', ({ targetUserId, fileId, fileName, fileSize, totalChunks }) => {
-    const targetUser = users.get(targetUserId);
-    if (targetUser) {
-      const userId = socketToUser.get(socket.id);
-      io.to(targetUser.socketId).emit('file:start', {
-        fromUserId: userId,
-        fileId,
-        fileName: escapeHtml(fileName),
-        fileSize,
-        totalChunks
-      });
-    }
-  });
-
-  socket.on('file:chunk', ({ targetUserId, fileId, chunkIndex, chunk }) => {
-    const targetUser = users.get(targetUserId);
-    if (targetUser) {
-      const userId = socketToUser.get(socket.id);
-      io.to(targetUser.socketId).emit('file:chunk', {
-        fromUserId: userId,
-        fileId,
-        chunkIndex,
-        chunk
-      });
-    }
-  });
-
-  socket.on('file:end', ({ targetUserId, fileId }) => {
-    const targetUser = users.get(targetUserId);
-    if (targetUser) {
-      const userId = socketToUser.get(socket.id);
-      io.to(targetUser.socketId).emit('file:end', { fromUserId: userId, fileId });
-    }
-  });
 
   // Room leave
   socket.on('room:leave', ({ roomId }) => {
@@ -465,7 +405,7 @@ function broadcastRoomList() {
 // Start server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`P2P WebChat server running on http://0.0.0.0:${PORT}`);
+  console.log(`WiFi Chat server running on http://0.0.0.0:${PORT}`);
   console.log(`Access from other devices on your network using your local IP address`);
 });
 function getLocalIp() {
